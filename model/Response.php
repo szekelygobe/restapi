@@ -31,7 +31,7 @@ class Response {
     public function send(){
         header('Content-type application/json;charset=utf-8');
 
-        if($this-toCache == true){
+        if($this->_toCache == true){
             header('Cache-control: max-age=60');
         } else {
             header('Cache-control: no-cache, no-store');
@@ -51,8 +51,7 @@ class Response {
             $this->_responseData['messages'] = $this->_messages;
             $this->_responseData['data'] = $this->_data;
         }
-        
-        echo json_decode($this->_responseData);
+        echo(json_encode($this->_responseData));
     }
 
 
