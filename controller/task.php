@@ -23,6 +23,7 @@ try {
 
 if(array_key_exists("taskid", $_GET)){
     // init vars
+    $taskArray = [];
     $tasksArray = [];
     $returnData = [];
 
@@ -37,7 +38,8 @@ if(array_key_exists("taskid", $_GET)){
         exit();
     }
 
-    if($_SERVER['REQUEST_METHOD'] === 'GET'){
+    if($_SERVER['REQUEST_METHOD'] === 'GET')
+    {
         try {
             $query = $readDB->prepare('
                 SELECT 
@@ -49,7 +51,7 @@ if(array_key_exists("taskid", $_GET)){
                 FROM tbltasks
                 WHERE id = :p_taskId
             ');
-            $query->bindParam(':p_taskId', $taskId);
+            $query->bindParam(':p_taskId', $taskId, PDO::PARAM_INT);
             $query->execute();
 
             $rowCount = $query->rowCount();
@@ -89,7 +91,8 @@ if(array_key_exists("taskid", $_GET)){
             $response->send();
             exit();
 
-        } catch (TaskException $e){
+        }
+        catch (TaskException $e){
             $response = new Response();
             $response->setHttpStatusCode(500);
             $response->setSuccess(false);
@@ -97,7 +100,8 @@ if(array_key_exists("taskid", $_GET)){
             $response->send();
             exit();
 
-        } catch (PDOException $e){
+        }
+        catch (PDOException $e){
             // logging error message to standard php error log file
             error_log("Database query error - ".$e, 0);
 
@@ -108,8 +112,8 @@ if(array_key_exists("taskid", $_GET)){
             $response->send();
             exit();
         }
-
-    } else if($_SERVER['REQUEST_METHOD'] === 'DELETE'){
+    }
+    else if($_SERVER['REQUEST_METHOD'] === 'DELETE'){
         try {
             $query = $writeDB->prepare('
                 DELETE 
@@ -147,8 +151,9 @@ if(array_key_exists("taskid", $_GET)){
             exit();
         }
 
-    } else if($_SERVER['REQUEST_METHOD'] === 'PATCH'){
-    } else {
+    }
+    else if($_SERVER['REQUEST_METHOD'] === 'PATCH'){}
+    else {
         $response = new Response();
         $response->setHttpStatusCode(405);
         $response->setSuccess(false);
@@ -157,6 +162,84 @@ if(array_key_exists("taskid", $_GET)){
         exit();
     }
 
+}
+// setting completed status of a task
+else if (array_key_exists('completed', $_GET)){
+    $completed = $_GET['completed'];
+    // if invalid parameter
+    if($completed !== 'Y' && $completed !== 'N'){
+        $response = new Response();
+        $response->setHttpStatusCode(400);
+        $response->setSuccess(false);
+        $response->addMessage("Completed filter must be Y or N");
+        $response->send();
+        exit();
+    }
 
+    if($_SERVER['REQUEST_METHOD'] === 'GET') {
+        try {
+            $query = $readDB->prepare('
+                SELECT 
+                    id, 
+                    title, 
+                    description, 
+                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
+                    completed
+                FROM tbltasks
+                WHERE  completed = :p_completed
+            ');
+            $query->bindParam(':p_completed', $completed, PDO::PARAM_STR);
+            $query->execute();
+            $rowCount = $query->rowCount();
 
-} // if
+            while($row = $query->fetch(PDO::FETCH_ASSOC)){
+                $task = new Task(
+                    $row['id'],
+                    $row['title'],
+                    $row['description'],
+                    $row['deadline'],
+                    $row['completed']
+                );
+                $taskArray[] = $task->returnTaskAsArray();
+            }
+
+            $returnData['rows_returned'] = $rowCount;
+            $returnData['tasks'] = $taskArray;
+
+            $response = new Response();
+            $response->setHttpStatusCode(200);
+            $response->setSuccess(true);
+            $response->toCache(true);
+            $response->setData($returnData);
+            $response->send();
+            exit();
+        }
+        catch (TaskException $e){
+            $response = new Response();
+            $response->setHttpStatusCode(500);
+            $response->setSuccess(false);
+            $response->addMessage($e->getMessage());
+            $response->send();
+            exit();
+        }
+        catch (PDOException $e){
+            error_log("Database query error - ".$e, 0);
+            $response = new Response();
+            $response->setHttpStatusCode(500);
+            $response->setSuccess(false);
+            $response->addMessage("Faild to get tasks");
+            $response->send();
+            exit();
+        }
+    }
+    // invalid method
+    else {
+        $response = new Response();
+        $response->setHttpStatusCode(405);
+        $response->setSuccess(false);
+        $response->addMessage("Request method not allowed - ".$_SERVER['REQUEST_METHOD']);
+        $response->send();
+        exit();
+    }
+
+}// if task id
