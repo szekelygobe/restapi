@@ -38,7 +38,6 @@ if(array_key_exists("taskid", $_GET)){
     }
 
     if($_SERVER['REQUEST_METHOD'] === 'GET'){
-
         try {
             $query = $readDB->prepare('
                 SELECT 
@@ -97,6 +96,7 @@ if(array_key_exists("taskid", $_GET)){
             $response->addMessage($e->getMessage());
             $response->send();
             exit();
+
         } catch (PDOException $e){
             // logging error message to standard php error log file
             error_log("Database query error - ".$e, 0);
@@ -110,6 +110,43 @@ if(array_key_exists("taskid", $_GET)){
         }
 
     } else if($_SERVER['REQUEST_METHOD'] === 'DELETE'){
+        try {
+            $query = $writeDB->prepare('
+                DELETE 
+                FROM tbltasks 
+                WHERE id = :p_taskId
+            ');
+            $query->bindParam(':p_taskId', $taskId, PDO::PARAM_INT);
+            $query->execute();
+
+            $rowCount = $query->rowCount();
+            // if deletion failed
+            if($rowCount === 0){
+                $response = new Response();
+                $response->setHttpStatusCode(404);
+                $response->setSuccess(false);
+                $response->addMessage('Task not found');
+                $response->send();
+                exit();
+            }
+
+            // on success build and send response
+            $response = new Response();
+            $response->setHttpStatusCode(200);
+            $response->setSuccess(true);
+            $response->addMessage('Task deleted');
+            $response->send();
+            exit();
+
+        } catch (PDOException $e){
+            $response = new Response();
+            $response->setHttpStatusCode(500);
+            $response->setSuccess(false);
+            $response->addMessage('Faild to delete task');
+            $response->send();
+            exit();
+        }
+
     } else if($_SERVER['REQUEST_METHOD'] === 'PATCH'){
     } else {
         $response = new Response();
