@@ -20,7 +20,7 @@ try {
     $response->send();
     exit();
 }
-
+// if task id provided
 if(array_key_exists("taskid", $_GET)){
     // init vars
     $taskArray = [];
@@ -242,4 +242,92 @@ else if (array_key_exists('completed', $_GET)){
         exit();
     }
 
-}// if task id
+}
+// if $_GET is empty for all tasks
+else if (empty($_GET)){
+    // if requesting list of tasks
+    if($_SERVER['REQUEST_METHOD'] === 'GET'){
+        try {
+
+            $query = $readDB->prepare('
+                SELECT 
+                    id, 
+                    title, 
+                    description, 
+                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
+                    completed
+                FROM tbltasks
+                WHERE  1
+            ');
+            $query->execute();
+            $rowCount  = $query->rowCount();
+            $taskArray = []; // reset array
+
+            while($row = $query->fetch(PDO::FETCH_ASSOC)){
+                $task = new Task(
+                    $row['id'],
+                    $row['title'],
+                    $row['description'],
+                    $row['deadline'],
+                    $row['completed']
+                );
+                $taskArray[] = $task->returnTaskAsArray();
+            }
+
+            $returnData = [];
+            $returnData['rows_returned'] = $rowCount;
+            $returnData['tasks'] = $taskArray;
+
+            $response = new Response();
+            $response->setHttpStatusCode(200);
+            $response->setSuccess(true);
+            $response->toCache(true);
+            $response->setData($returnData);
+            $response->send();
+            exit();
+        } catch (PDOException $ex){
+            $response = new Response();
+            $response->setHttpStatusCode(500);
+            $response->setSuccess(false);
+            $response->addMessage($ex->getMessage());
+            $response->send();
+            exit();
+        } catch (TaskException $ex){
+            error_log("Database query error - ". $ex, 0);
+            $response = new Response();
+            $response->setHttpStatusCode(404);
+            $response->setSuccess(false);
+            $response->addMessage("Failed to get tasks");
+            $response->send();
+            exit();
+
+        }
+    }
+    // if posting a new task
+    elseif ($_SERVER['REQUEST_METHOD'] === 'POST'){
+
+
+    }
+    // if invalid request method
+    else {
+        $response = new Response();
+        $response->setHttpStatusCode(405);
+        $response->setSuccess(false);
+        $response->addMessage('Request method not allowed - '. $_SERVER['REQUEST_METHOD']);
+        $response->send();
+        exit();
+    } // end if else GET / POST
+
+
+
+
+}
+// on invalid url
+else {
+    $response = new Response();
+    $response->setHttpStatusCode(404);
+    $response->setSuccess(false);
+    $response->addMessage('Endpoint not found');
+    $response->send();
+    exit();
+} // end if else if...
