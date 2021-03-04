@@ -1,6 +1,6 @@
 <?php declare(strict_types=1);
 
-require_once ('../debug_functions.php');
+require_once('../utils/debug_functions.php');
 
 class DB {
     private static $writeDBConnection;
@@ -43,20 +43,27 @@ class DB {
     } // end read db
 
 
-
     /**
      * Runs a query on the database
      * @access public
-     * @param $p_db_connection  - the db connection to query
-     * @param string $p_query   - query
-     * @param array $p_params   - the PDO parameters for the prepare statement
+     * @param object $p_db_connection   - the db connection to query
+     * @param string $p_query           - query
+     * @param array $p_params           - the PDO parameters for the prepare statement
+     * @param bool|null $p_print        - flag to print built query
      * @return array - array of [rowCount] and [data]
      */
-    public static function dbQuery(object $p_db_connection, string $p_query, array $p_params):array
+    public static function dbQuery(
+        object $p_db_connection,
+        string $p_query,
+        array $p_params,
+        bool $p_print=null):array
     {
+        // printing parameter query on demand
+        $p_print ? psql($p_query, $p_params,' dbQuery query ',0,1) : null;
+
         // init vars
         $result = [];
-
+        // trying to run query
         try {
             // setting parameter
             $p_db_connection->setAttribute( PDO::ATTR_EMULATE_PREPARES, false );
@@ -74,7 +81,7 @@ class DB {
             return $result;
         } catch (PDOException $ex){
             throw $ex;
-        }
+        } // try catch
     } // end func. query
 
 
@@ -82,12 +89,17 @@ class DB {
     /**
      * Runs a insert query on the database
      * @access public
-     * @param object $p_db      - the database to insert (database connection object)
-     * @param string $p_table   - the name of the table to insert to
-     * @param array $p_values   - array of the values to insert [the key is the column, the value is the value]
+     * @param object $p_db          - the database to insert (database connection object)
+     * @param string $p_table       - the name of the table to insert to
+     * @param array $p_values       - array of the values to insert [the key is the column, the value is the value]
+     * @param bool|null $p_print    - flag to print built query
      * @return int - last insert id
      */
-    public static function insertDB( object $p_db, string $p_table,array $p_values): int
+    public static function insertDB(
+        object $p_db,
+        string $p_table,
+        array $p_values,
+        bool $p_print=null): int
     {
 
         // init vars
@@ -108,7 +120,8 @@ class DB {
         // building insert query
         $query = ' INSERT INTO '.$p_table.' ('.$fields.') VALUES ('.$placeholders.')';
 
-        // psql($query, $params,'db.php - 108',0,  1);
+        // print built query on demand
+        $p_print ? psql($query, $params,' insertDB query ',0,  1) : null;
 
         // building and executing PDO query
         try {
@@ -119,7 +132,7 @@ class DB {
             // inserting variables
             $PDO_stmt->execute($params);
             // returning the id of the inserted row
-            return $p_db->lastInsertId();
+            return (int)$p_db->lastInsertId();
             // if error
         } catch (PDOException $ex) {
             throw $ex;
@@ -129,16 +142,81 @@ class DB {
 
 
     /**
+     * Update DB row
+     * @access public
+     * @param object $p_db      - DB connection to update data in
+     * @param string $p_table   - the table to update in
+     * @param array $p_values   - the table column names and values to update in array format ['table_col']=>value
+     * @param array $p_where    - the sql where parameters to identify the row to update, in array format ['table_col']=>value
+     * @param bool $p_print     - flag to pring generated query
+     * @return array - the affected row count and data
+     */
+    public static function updateDB(
+        object $p_db,
+        string $p_table,
+        array $p_values,
+        array $p_where,
+        bool $p_print=null): array
+    {
+        // init var
+        $custom_where = '';
+        $values       = '';
+        $param        = [];
+
+        // looping through array
+        foreach ($p_values as $v_key => $v_val) {
+            // building SET part of query
+            $values .= $v_key.'=:pv_'.$v_key.', ';
+            // adding values to PDO param array
+            $param[':pv_'.$v_key]=$v_val;
+        }// end foreach
+        // trimming tailing ', '
+        $values = rtrim($values, ', ');
+
+        // looping through WHERE array
+        foreach ($p_where as $w_key => $w_val) {
+            // building WHERE part of query
+            $custom_where .= $w_key.'=:p_'.$w_key.' AND ';
+            // adding values to PDO param array
+            $param[':p_'.$w_key]=$w_val;
+        } // end foreach
+        // trimming trailing 'AND '
+        $custom_where = rtrim($custom_where, 'AND ');
+
+        // building query
+        $query = ' UPDATE '.$p_table.' SET '.$values.' WHERE '.$custom_where;
+
+        // display built query on demand
+        $p_print ? psql($query, $param,' updateDB query ',0,1) : null;
+
+        // trying to update
+        try {
+            return self::dbQuery($p_db, $query, $param);
+        } catch (PDOException $ex){
+            throw $ex;
+        } // try catch
+    } // end func update db
+
+
+
+    /**
      * Select and return DB data
      * @access public
-     * @param $p_db                 - the database connection
+     * @param object $p_db          - the database connection
      * @param string $p_table       - the table to query
      * @param string $p_fields      - the fields to return
      * @param array $p_where        - array of where clause values [key will be the column name, value the matched value]
      * @param string|null $p_limit  - the limit part of query
+     * @param bool|null $p_print    - flag to print built query
      * @return array - array of [rowCount] and [data]
      */
-    public static function requestDBData(object $p_db, string $p_table, string $p_fields, array $p_where, string $p_limit = null): array
+    public static function requestDBData(
+        object $p_db,
+        string $p_table,
+        string $p_fields,
+        array $p_where,
+        string $p_limit = null,
+        bool $p_print = null ): array
     {
         // init var
         $params       = [];
@@ -155,8 +233,8 @@ class DB {
         $custom_where = rtrim($custom_where, ' AND ');
         // building query
         $query = 'SELECT '.$p_fields.' FROM '.$p_table.' WHERE '.$custom_where.' '.$p_limit;
-
-        // psql($query, $params,'db.php - 81',0,1);
+        // print built query on request
+        $p_print ? psql($query, $params,' requestDBData query ',0,1) : null;
 
         try {
             return self::dbQuery($p_db, $query, $params);
@@ -170,25 +248,31 @@ class DB {
     /**
      * Search task data in DB
      * @access public
-     * @param $p_db                 - the database connection
+     * @param object $p_db          - the database connection
      * @param array $p_where        - array of where clause values [key will be the column name, value the matched value]
      * @param string|null $p_limit  - the limit part of query
+     * @param bool|null $p_print    - flag to print built query
      * @return array - array of [rows_returned] and [tasks]
      */
-    public static function requestDBTask(object $p_db, array $p_where, string $p_limit = null): array
+    public static function requestDBTask(
+        object $p_db,
+        array $p_where,
+        string $p_limit = null,
+        bool $p_print = null ): array
     {
-        try {
-            // init vars
-            $task               = null;
-            $tasksArray         = [];
-            $result             = [];
+        // init vars
+        $task               = null;
+        $tasksArray         = [];
+        $result             = [];
 
+        try {
             $dbTasks = self::requestDBData(
                 $p_db,
                 'tbltasks',
-                'id, title, description, DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, completed',
+                'id, title, description, DATE_FORMAT(deadline, "'.CONST_MYSQL_DATE_FORMAT.'") as deadline, completed',
                 $p_where,
-                $p_limit
+                $p_limit,
+                $p_print
             );
             // if tasks found
             if(count($dbTasks['data'])>0){
@@ -217,13 +301,17 @@ class DB {
     /**
      * Delete a row from db table
      * @access public
-     * @param $p_db             - the database connection
-     * @param string $p_table   - table name to delete from
-     * @param array $p_where    - array of values to identify deletable row, the key is the field name the value is the field value
-     *         ex.: ['trademark_id'=>some_value]
+     * @param object $p_db          - the database connection
+     * @param string $p_table       - table name to delete from
+     * @param array $p_where        - array of values to identify row, [key = field name] [value = field value]
+     * @param bool|null $p_print    - flag to print built query
      * @return int - the affected row count
      */
-    public static function deleteTableRow (object $p_db, string $p_table, array $p_where): int
+    public static function deleteTableRow (
+        object $p_db,
+        string $p_table,
+        array $p_where,
+        bool $p_print = null): int
     {
         // init var
         $params       = [];
@@ -241,11 +329,11 @@ class DB {
         $custom_where = rtrim($custom_where, ' AND ');
         // building query
         $query = 'DELETE FROM '.$p_table.' WHERE '.$custom_where.' ';
+        // print built query on request
+        $p_print ? psql($query, $params,' deleteTableRow query ',0,1) : null;
 
         try {
             $deletedRow = self::dbQuery($p_db, $query,$params);
-            // psql($query,$params,' DELETE ', 0, 1);
-
             return $deletedRow['rowCount'];
         } catch (PDOException $ex){
             throw $ex;

@@ -1,9 +1,12 @@
 <?php
-require_once ('../config/constants.php');
 require_once ('db.php');
+require_once ('../config/constants.php');
 require_once ('../model/Response.php');
 require_once ('../model/Task.php');
-require_once ('../debug_functions.php');
+require_once ('../utils/debug_functions.php');
+require_once ('../languages/lng_'.CONST_DEFAULT_LANGUAGE.'.php');
+
+global $language_array;
 
 // DB connection
 try {
@@ -13,9 +16,9 @@ try {
 
 } catch (PDOException $e){
     // logging error message to standard php error log file
-    error_log("Connection error - ".$e, 0);
+    error_log($language_array['LNG_DB_CONNECTION_ERROR'].' - '.$e, 0);
     // build and return error response
-    Response::returnErrorResponse(500, ["Database connection error"]);
+    Response::returnErrorResponse(500, [$language_array['LNG_DB_CONNECTION_ERROR']]);
 }
 
 // if task id provided
@@ -30,7 +33,7 @@ if(array_key_exists("taskid", $_GET)){
     // on taskId error
     if($taskId == '' || !is_numeric($taskId)){
         // build and return error response
-        Response::returnErrorResponse(400, ["Task ID cannot be blank or must be numeric"]);
+        Response::returnErrorResponse(400, [$language_array['LNG_MISSING_TASK_ID']]);
     }
 
     // handling GET request
@@ -42,7 +45,7 @@ if(array_key_exists("taskid", $_GET)){
             // if no task found
             if($dbData['rows_returned'] === 0){
                 // build and return error response
-                Response::returnErrorResponse(404, ["Task not found"]);
+                Response::returnErrorResponse(404, [$language_array['LNG_TASK_NOT_FOUND']]);
             } // row count
             // building and returning response
             Response::returnSuccessResponse(200, $dbData);
@@ -53,9 +56,9 @@ if(array_key_exists("taskid", $_GET)){
         }
         catch (PDOException $e){
             // logging error message to standard php error log file
-            error_log("Database query error - ".$e, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$e, 0);
             // build and return error response
-            Response::returnErrorResponse(500, ["Failed to get task"]);
+            Response::returnErrorResponse(500, [$language_array['LNG_FAILED_TO_GET_TASK']]);
         }
     }
     // handling delete request
@@ -67,15 +70,15 @@ if(array_key_exists("taskid", $_GET)){
             // if deletion failed
             if($taskDelete === 0){
                 // build and return error response
-                Response::returnErrorResponse(404, ["Task not found"]);
+                Response::returnErrorResponse(404, [$language_array['LNG_TASK_NOT_FOUND']]);
             } // if no task fund
 
             // building and returning response
-            Response::returnSuccessResponse(200, null, "Task deleted");
+            Response::returnSuccessResponse(200, null, $language_array['LNG_TASK_DELETED']);
 
         } catch (PDOException $e){
             // build and return error response
-            Response::returnErrorResponse(500, ["Failed to delete task"]);
+            Response::returnErrorResponse(500, [$language_array['LNG_FAILED_TO_DELETE_TASK']]);
         } // end try catch
 
     }
@@ -84,13 +87,13 @@ if(array_key_exists("taskid", $_GET)){
         try {
             // if not valid json header
             if(isset($_SERVER['CONTENT_TYPE']) && $_SERVER['CONTENT_TYPE'] !== "application/json"){
-                Response::returnErrorResponse(400, ["Content type header not set to JSON"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_HEADER_NOT_JSON']]);
             }
             // passed data
             $rawPATCHData = file_get_contents('php://input');
             // trying to decode sent data
             if(!$jsonData = json_decode($rawPATCHData)){
-                Response::returnErrorResponse(400, ["Request body is not valid JSON"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_BODY_NOT_VALID_JSON']]);
             }
 
             // init var
@@ -104,7 +107,7 @@ if(array_key_exists("taskid", $_GET)){
             // building update query
             $queryFields .= $title_updated       ? " title = :p_title, " : null;
             $queryFields .= $description_updated ? " description = :p_description, " : null;
-            $queryFields .= $deadline_updated    ? " deadline = STR_TO_DATE(:p_deadline, '%d/%m/%Y %H:%i'), " : null;
+            $queryFields .= $deadline_updated    ? " deadline = STR_TO_DATE(:p_deadline, '".CONST_MYSQL_DATE_FORMAT."'), " : null;
             $queryFields .= $completed_updated   ? " completed = :p_completed, " : null;
             // trimming trailing comma
             $queryFields         = rtrim($queryFields, ', ');
@@ -116,7 +119,7 @@ if(array_key_exists("taskid", $_GET)){
                 $completed_updated      === false
             ){
                 // build and return error response
-                Response::returnErrorResponse(400, ["No task fields provided"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_NO_TASK_FIELD']]);
             }
 
             // requesting existing DB task
@@ -124,7 +127,7 @@ if(array_key_exists("taskid", $_GET)){
 
             // if no task found
             if($originalTask['rows_returned'] === 0){
-                Response::returnErrorResponse(404, ["No task found to update"]);
+                Response::returnErrorResponse(404, [$language_array['LNG_NO_TASK_TO_UPDATE']]);
             }
 
             // the found task
@@ -164,7 +167,7 @@ if(array_key_exists("taskid", $_GET)){
             $rowCount = $query->rowCount();
             // if no task updated
             if($rowCount === 0){
-                Response::returnErrorResponse(400, ["Task not updated"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_TASK_NOT_UPDATED']]);
             }
 
             // requesting existing DB task
@@ -173,7 +176,7 @@ if(array_key_exists("taskid", $_GET)){
             $returnData['tasks'] = $updatedTask['tasks'];
 
             // return success response
-            Response::returnSuccessResponse(200, $returnData, "Task updated");
+            Response::returnSuccessResponse(200, $returnData, $language_array['LNG_TASK_UPDATED']);
         }
         catch (TaskException $ex){
             // build and sed error response
@@ -181,17 +184,16 @@ if(array_key_exists("taskid", $_GET)){
         }
         catch (PDOException $ex){
             // logging error to php error logs
-            error_log("Database query error - ".$ex, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$ex, 0);
             // build and sed error response
-            Response::returnErrorResponse(500,
-                                          ["Failed to update task - check your data for errors - " . $ex->getMessage()]
+            Response::returnErrorResponse(500, [$language_array['LNG_TASK_UPDATED_FAILED']]
             );
         } // end try catch
     }
     // on unsupported request
     else {
         // build and return error response
-        Response::returnErrorResponse(405, ["Request method not allowed - " . $_SERVER['REQUEST_METHOD']]);
+        Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_METHOD_ERROR'].' - ' . $_SERVER['REQUEST_METHOD']]);
     } // end if else verbs
 
 }
@@ -203,7 +205,7 @@ else if (array_key_exists('completed', $_GET)){
     // if invalid parameter
     if($completed !== 'Y' && $completed !== 'N'){
         // build and return error response
-        Response::returnErrorResponse(400, ["Completed filter must be Y or N - " . $completed]);
+        Response::returnErrorResponse(400, [$language_array['LNG_TASK_COMPLETED_ERROR'].' - '.$completed]);
     } // invalid completed flag
 
     // on completed GET request
@@ -219,16 +221,16 @@ else if (array_key_exists('completed', $_GET)){
             Response::returnErrorResponse(500, [$e->getMessage()]);
         }
         catch (PDOException $e){
-            error_log("Database query error - ".$e, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$e, 0);
             // build and return error response
-            Response::returnErrorResponse(500, ["Failed to get tasks"]);
+            Response::returnErrorResponse(500, [$language_array['LNG_FAILED_TO_GET_TASK']]);
         } // end try catch
     }
     // invalid method
     else {
         // build and return error response
-        Response::returnErrorResponse(405, ["Request method not allowed - " . $_SERVER['REQUEST_METHOD']]);
-    }
+        Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_METHOD_ERROR'].' - '. $_SERVER['REQUEST_METHOD']]);
+    } // if else GET
 
 }
 // if tasks with pagination
@@ -240,7 +242,7 @@ else if (array_key_exists('page', $_GET)) {
         // error handling ofr page number
         if($page == '' || !is_numeric($page)){
             // build and return error response
-            Response::returnErrorResponse(400, ["Page number cannot be blank and must be numeric - " . $page]);
+            Response::returnErrorResponse(400, [$language_array['LNG_PAGE_NUMBER_ERROR'].' - '.$page]);
         } // if invalid page number
 
         try {
@@ -255,7 +257,7 @@ else if (array_key_exists('page', $_GET)) {
             // handling page range errors
             if($page > $numOfPages || $page == 0){
                 // build and return error response
-                Response::returnErrorResponse(400, ["Page not found - " . $page]);
+                Response::returnErrorResponse(400, [$language_array['LNG_PAGE_NOT_FOUND'].' - '. $page]);
             } // if invalid page range
 
             // calculating tasks to return
@@ -270,7 +272,6 @@ else if (array_key_exists('page', $_GET)) {
             // returning pagination info
             $page < $numOfPages ? $returnData['has_next_page'] = true : $returnData['has_next_page'] =  false;
             $page > 1 ? $returnData['has_previous_page'] = true : $returnData['has_previous_page'] =  false;
-
             $returnData['tasks'] = $dbData['tasks'];
 
             // build and return success response
@@ -280,15 +281,15 @@ else if (array_key_exists('page', $_GET)) {
             // build and return error response
             Response::returnErrorResponse(500, [$ex->getMessage()]);
         } catch (PDOException $ex) {
-            error_log("Database query error - ".$ex, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$ex, 0);
             // build and return error response
-            Response::returnErrorResponse(500, ["Failed to get tasks"]);
+            Response::returnErrorResponse(500, [$language_array['LNG_FAILED_TO_GET_TASK']]);
         } // try catch
     }
     // if not GET method
     else {
         // build and return error response
-        Response::returnErrorResponse(405, ["Request method not allowed - " . $_SERVER['REQUEST_METHOD']]);
+        Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_METHOD_ERROR'].' - '.$_SERVER['REQUEST_METHOD']]);
     } // end if not GET method
 }
 // if $_GET is empty for all tasks
@@ -307,9 +308,9 @@ else if (empty($_GET)){
             // build and return error response
             Response::returnErrorResponse(500, [$ex->getMessage()]);
         } catch (TaskException $ex){
-            error_log("Database query error - ". $ex, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '. $ex, 0);
             // build and return error response
-            Response::returnErrorResponse(404, ["Failed to get tasks"]);
+            Response::returnErrorResponse(404, [$language_array['LNG_FAILED_TO_GET_TASK']]);
         } // end try catch
     }
     // if posting a new task
@@ -324,7 +325,7 @@ else if (empty($_GET)){
             // check if valid json data
             if(isset($_SERVER['CONTENT_TYPE']) && $_SERVER['CONTENT_TYPE'] !== 'application/json'){
                 // build and return error response
-                Response::returnErrorResponse(400, ["Content type header is not set to JSON"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_HEADER_NOT_JSON']]);
             } // if json sent
 
             // getting raw posted data into variable
@@ -333,7 +334,7 @@ else if (empty($_GET)){
             // if valid json data and decoded successfully
             if(!$jsonData = json_decode($rawPOSTData)){
                 // build and return error response
-                Response::returnErrorResponse(400, ["Request body is not valid JSON"]);
+                Response::returnErrorResponse(400, [$language_array['LNG_BODY_NOT_VALID_JSON']]);
             } // end if valid json
 
             // checking for mandatory fields
@@ -341,8 +342,8 @@ else if (empty($_GET)){
                 (!isset($jsonData->completed) || strlen($jsonData->completed) !== 1)
             ){
                 // adding error message if missing required field
-                !isset($jsonData->title) ? $returnMessage[] = "Title field is mandatory and must be provided" : null;
-                !isset($jsonData->completed) ? $returnMessage[] = "Completed field is mandatory and must be provided" : null;
+                !isset($jsonData->title) ? $returnMessage[] = $language_array['LNG_TASK_TITLE_MANDATORY'] : null;
+                !isset($jsonData->completed) ? $returnMessage[] = $language_array['LNG_TASK_COMPLETED_MANDATORY'] : null;
                 // building and returning error response
                 Response::returnErrorResponse(400, $returnMessage);
             } // end if missing fields
@@ -367,7 +368,7 @@ else if (empty($_GET)){
             $taskInsert = DB::insertDB($writeDB, TBL_TASKS, $insertValues);
             // if task not inserted return error
             if((int)$taskInsert === 0){
-                Response::returnErrorResponse(500, ["Failed to create task"]);
+                Response::returnErrorResponse(500, [$language_array['LNG_TASK_CREATION_FAILED']]);
             }
 
             // getting newly inserted task data
@@ -376,31 +377,31 @@ else if (empty($_GET)){
             // if task not found
             if($dbData['rows_returned'] === 0){
                 // build and return error response
-                Response::returnErrorResponse(500, ["Failed to return task after creation - id:" . $taskInsert]);
+                Response::returnErrorResponse(500, [$language_array['LNG_TASK_C_RETURNED_FAILED'].' - '. $taskInsert]);
             } // row count
 
             // building and returning response
-            Response::returnSuccessResponse(201, $dbData, "Task created", false);
+            Response::returnSuccessResponse(201, $dbData, $language_array['LNG_TASK_CREATED'], false);
         }
         catch (TaskException $ex){
             // build and return error response
             Response::returnErrorResponse(400, [$ex->getMessage()]);
         }
         catch (PDOException $ex){
-            error_log("Database query error - ".$ex, 0);
+            error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$ex, 0);
             // build and return error response
-            Response::returnErrorResponse(500, ["Failed to insert task into database - check submitted data for errors"]
+            Response::returnErrorResponse(500, [$language_array['LNG_TASK_INSERT_ERROR']]
             );
         } // end try catch
     }
     // if invalid request method
     else {
         // build and return error response
-        Response::returnErrorResponse(405, ["Request method not allowed - " . $_SERVER['REQUEST_METHOD']]);
+        Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_METHOD_ERROR'].' - '. $_SERVER['REQUEST_METHOD']]);
     } // end if else GET / POST
 }
 // on invalid url
 else {
     // build and return error response
-    Response::returnErrorResponse(404, ["Endpoint not found"]);
+    Response::returnErrorResponse(404, [$language_array['LNG_ENDPOINT_ERROR']]);
 } // end if else if...

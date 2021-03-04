@@ -2,24 +2,29 @@
 require_once ('db.php');
 require_once ('../config/constants.php');
 require_once ('../model/Response.php');
+require_once ('../utils/debug_functions.php');
+require_once ('../languages/lng_'.CONST_DEFAULT_LANGUAGE.'.php');
+
+global $language_array;
 
 // connecting to DB
 try {
     $writeDB = DB::connectWriteDB();
 }
 catch ( PDOException $ex){
-    error_log("Connection error - ".$ex, 0);
-    Response::returnErrorResponse(500, ["Unable to connect to DB"]);
+    error_log($language_array['LNG_DB_CONNECTION_ERROR'].' - '.$ex, 0);
+    // build and return error response
+    Response::returnErrorResponse(500, [$language_array['LNG_DB_CONNECTION_ERROR']]);
 } // end try
 
 // checking for method
 if($_SERVER['REQUEST_METHOD'] !== 'POST'){
-    Response::returnErrorResponse(405, ["Request not allowed"]);
+    Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_NOT_ALLOWED']]);
 } // if not POST
 
 // checking for content header
 if(isset($_SERVER['CONTENT_TYPE']) && $_SERVER['CONTENT_TYPE'] !== 'application/json'){
-    Response::returnErrorResponse(400, ["Content type header not set to JSON"]);
+    Response::returnErrorResponse(400, [$language_array['LNG_HEADER_NOT_JSON']]);
 } // if not json
 
 // getting sent data
@@ -27,7 +32,7 @@ $rawPostData = file_get_contents('php://input');
 
 // if invalid json
 if(!$jsonData = json_decode($rawPostData)){
-    Response::returnErrorResponse(400, ["Request body is not valid JSON"]);
+    Response::returnErrorResponse(400, [$language_array['LNG_BODY_NOT_VALID_JSON']]);
 } // if not valid JSON
 
 // checking if data supplied
@@ -35,9 +40,9 @@ if(!isset($jsonData->fullname) || !isset($jsonData->username) || !isset($jsonDat
     // init var
     $message = [];
     // building list of error messages
-    !isset($jsonData->fullname) ? $message[] = "Full name not supplied" : null;
-    !isset($jsonData->username) ? $message[] = "Username not supplied" : null;
-    !isset($jsonData->password) ? $message[] = "Password not supplied" : null;
+    !isset($jsonData->fullname) ? $message[] = $language_array['LNG_FULLNAME_NOT_SUPPLIED'] : null;
+    !isset($jsonData->username) ? $message[] = $language_array['LNG_USERNAME_NOT_SUPPLIED'] : null;
+    !isset($jsonData->password) ? $message[] = $language_array['LNG_PASSWORD_NOT_SUPPLIED'] : null;
     // building and sending response
     Response::returnErrorResponse(400, $message);
 } // if all data supplied
@@ -53,12 +58,12 @@ if( strlen($jsonData->fullname) < 1 ||
     // init var
     $message = [];
     // building list of error messages
-    !strlen($jsonData->fullname) < 1 ? $message[] = "Full name cannot be blank" : null;
-    !strlen($jsonData->fullname) > 255 ? $message[] = "Full name cannot be greater than 255 characters" : null;
-    !strlen($jsonData->username) < 1 ? $message[] = "Username cannot be blank" : null;
-    !strlen($jsonData->username) > 255 ? $message[] = "Username cannot be greater than 255 characters" : null;
-    !strlen($jsonData->password) < 1 ? $message[] = "Password cannot be blank" : null;
-    !strlen($jsonData->password) > 255 ? $message[] = "Password cannot be greater than 255 characters" : null;
+    !strlen($jsonData->fullname) < 1 ? $message[] = $language_array['LNG_FULLNAME_BLANK_ERROR'] : null;
+    !strlen($jsonData->fullname) > 255 ? $message[] = $language_array['LNG_FULLNAME_TO_LONG'] : null;
+    !strlen($jsonData->username) < 1 ? $message[] = $language_array['LNG_USERNAME_BLANK_ERROR'] : null;
+    !strlen($jsonData->username) > 255 ? $message[] = $language_array['LNG_USERNAME_TO_LONG'] : null;
+    !strlen($jsonData->password) < 1 ? $message[] = $language_array['LNG_PASSWORD_BLANK_ERROR'] : null;
+    !strlen($jsonData->password) > 255 ? $message[] = $language_array['LNG_PASSWORD_TO_LONG'] : null;
     // building and sending response
     Response::returnErrorResponse(400, $message);
 } // if valid data supplied
@@ -80,7 +85,7 @@ try {
 
     // if username already taken
     if($dbUser['rowCount'] !== 0){
-        Response::returnErrorResponse(409, ["Username already taken"]);
+        Response::returnErrorResponse(409, [$language_array['LNG_USERNAME_TAKEN']]);
     } // if taken
 
     // hashing password
@@ -98,7 +103,7 @@ try {
 
     // if error inserting user
     if((int)$insertedUser === 0 ){
-        Response::returnErrorResponse(500, ["There was an issue creating a user account - please try again"]);
+        Response::returnErrorResponse(500, [$language_array['LNG_USER_CREATION_ERROR']]);
     }
 
     // returning inserted user data
@@ -111,9 +116,9 @@ try {
     );
 
     // building and returning created user
-    Response::returnSuccessResponse(201, $newUser['data'][0], "User created");
+    Response::returnSuccessResponse(201, $newUser['data'][0], $language_array['LNG_USER_CREATED']);
 }
 catch (PDOException $ex){
-    error_log("Database query error - ".$ex, 0);
-    Response::returnErrorResponse(500, ["There was an issue creating a user account - please try again - ".$ex]);
+    error_log($language_array['LNG_DB_QUERY_ERROR'].' - '.$ex, 0);
+    Response::returnErrorResponse(500, [$language_array['LNG_USER_CREATION_ERROR']]);
 } // try
