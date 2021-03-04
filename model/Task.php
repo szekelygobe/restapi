@@ -36,8 +36,7 @@ class Task {
         );
     } // end from array
 
-
-public function getID(){
+    public function getID(){
         return $this->_id;
     }
 

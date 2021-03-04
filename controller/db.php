@@ -11,10 +11,11 @@ class DB {
     /**
      * Connecting to write database
      * @access public
-     * @param none
-     * @return connection reference
+     * @param -
+     * @return PDO - connection reference
      */
-    public static function connectWriteDB(){
+    public static function connectWriteDB(): PDO
+    {
         if(self::$writeDBConnection === null){
             self::$writeDBConnection = new PDO('mysql:host=localhost;dbname=tasksdb;charset=utf8', 'root', 'bubbancs');
             self::$writeDBConnection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -28,10 +29,11 @@ class DB {
     /**
      * Connecting to read database
      * @access public
-     * @param none
-     * @return connection reference
+     * @param -
+     * @return PDO - connection reference
      */
-    public static function connectReadDB(){
+    public static function connectReadDB(): PDO
+    {
         if(self::$readDBConnection === null){
             self::$readDBConnection = new PDO('mysql:host=localhost;dbname=tasksdb;charset=utf8', 'root', 'bubbancs');
             self::$readDBConnection->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
@@ -74,6 +76,55 @@ class DB {
             throw $ex;
         }
     } // end func. query
+
+
+
+    /**
+     * Runs a insert query on the database
+     * @access public
+     * @param object $p_db      - the database to insert (database connection object)
+     * @param string $p_table   - the name of the table to insert to
+     * @param array $p_values   - array of the values to insert [the key is the column, the value is the value]
+     * @return int - last insert id
+     */
+    public static function insertDB( object $p_db, string $p_table,array $p_values): int
+    {
+
+        // init vars
+        $fields       = '';
+        $placeholders = '';
+        $params       = [];
+
+        // looping through array
+        foreach ($p_values as $v_key => $v_val) {
+            $fields .= $v_key.', ';
+            $placeholders .= ':p_'.$v_key.', ';
+            $params[':p_'.$v_key] = $v_val;
+        }// end foreach
+        // removing trailing ', '
+        $fields = rtrim($fields, ', ');
+        $placeholders = rtrim($placeholders, ', ');
+
+        // building insert query
+        $query = ' INSERT INTO '.$p_table.' ('.$fields.') VALUES ('.$placeholders.')';
+
+        // psql($query, $params,'db.php - 108',0,  1);
+
+        // building and executing PDO query
+        try {
+            // setting parameter
+            $p_db->setAttribute( PDO::ATTR_EMULATE_PREPARES, false );
+            // preparing query
+            $PDO_stmt = $p_db->prepare($query);
+            // inserting variables
+            $PDO_stmt->execute($params);
+            // returning the id of the inserted row
+            return $p_db->lastInsertId();
+            // if error
+        } catch (PDOException $ex) {
+            throw $ex;
+        } // end try
+    } // end func. insert query
 
 
 
@@ -170,7 +221,7 @@ class DB {
      * @param string $p_table   - table name to delete from
      * @param array $p_where    - array of values to identify deletable row, the key is the field name the value is the field value
      *         ex.: ['trademark_id'=>some_value]
-     * @return array - array of [rowCount] and [data]
+     * @return int - the affected row count
      */
     public static function deleteTableRow (object $p_db, string $p_table, array $p_where): int
     {
@@ -186,8 +237,6 @@ class DB {
             $params[':p_'.$w_key] = $w_val;
         }// end foreach
 
-        // delete trailing AND
-        $del_where = rtrim($custom_where, ' AND ');
         // trimming trailing AND
         $custom_where = rtrim($custom_where, ' AND ');
         // building query

@@ -55,7 +55,47 @@ class Response {
         echo(json_encode($this->_responseData));
     }
 
+    public static function returnSuccessResponse(
+        int $p_code,
+        array $p_return_data = null,
+        string $p_message = null,
+        bool $p_cache = true
+    )
+    {
+        // building and returning response
+        $response = new self();
+        $response->setHttpStatusCode($p_code);
+        $response->setSuccess(true);
 
+        // cache response if needed
+        $p_cache
+            ? $response->toCache(true)
+            : null;
+        // returning data if provided
+        is_array($p_return_data) && !empty($p_return_data)
+            ? $response->setData($p_return_data)
+            : null;
+        // returning message if provided
+        $p_message && strlen($p_message)
+            ? $response->addMessage($p_message)
+            : null;
+
+        $response->send();
+        exit();
+    }// end func err message
+
+    public static function returnErrorResponse(int $p_err_code, array $p_message)
+    {
+        $response = new self();
+        $response->setHttpStatusCode($p_err_code);
+        $response->setSuccess(false);
+        // adding one or multiple messages
+        foreach ($p_message as $message) {
+            $response->addMessage($message);
+        } // foreach
+        $response->send();
+        exit();
+    } // end func err message
 
 } // class
 
