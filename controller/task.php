@@ -3,6 +3,7 @@
 require_once ('db.php');
 require_once ('../model/Response.php');
 require_once ('../model/Task.php');
+require_once ('../debug_functions.php');
 
 // DB connection
 try {
@@ -26,7 +27,7 @@ if(array_key_exists("taskid", $_GET)){
 
     $taskId = $_GET['taskid'];
 
-    // on taskid error
+    // on taskId error
     if($taskId == '' || !is_numeric($taskId)){
         // build and return error response
         returnErrorResponse(400, ["Task ID cannot be blank or must be numeric"]);
@@ -36,45 +37,15 @@ if(array_key_exists("taskid", $_GET)){
     if($_SERVER['REQUEST_METHOD'] === 'GET')
     {
         try {
-            $query = $readDB->prepare('
-                SELECT 
-                    id, 
-                    title, 
-                    description, 
-                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
-                    completed
-                FROM tbltasks
-                WHERE id = :p_taskId
-            ');
-            $query->bindParam(':p_taskId', $taskId, PDO::PARAM_INT);
-            $query->execute();
-
-            $rowCount = $query->rowCount();
-
-            // if task not found
-            if($rowCount === 0){
+            // getting task data from db
+            $dbData = DB::requestDBTask( $readDB, ['id'=>$taskId]);
+            // if no task found
+            if($dbData['rows_returned'] === 0){
                 // build and return error response
                 returnErrorResponse(404, ["Task not found"]);
             } // row count
-
-            // if task found
-            while($row = $query->fetch(PDO::FETCH_ASSOC)){
-                $task = new Task(
-                    $row['id'],
-                    $row['title'],
-                    $row['description'],
-                    $row['deadline'],
-                    $row['completed']
-                );
-                $tasksArray[] = $task->returnTaskAsArray();
-            } // while
-
-            // building task array for returning
-            $returnData['rows_returned'] = $rowCount;
-            $returnData['tasks'] = $tasksArray;
-
             // building and returning response
-            returnSuccessResponse(200, $returnData);
+            returnSuccessResponse(200, $dbData);
         }
         catch (TaskException $e){
             // build and return error response
@@ -90,17 +61,11 @@ if(array_key_exists("taskid", $_GET)){
     // handling delete request
     else if($_SERVER['REQUEST_METHOD'] === 'DELETE'){
         try {
-            $query = $writeDB->prepare('
-                DELETE 
-                FROM tbltasks 
-                WHERE id = :p_taskId
-            ');
-            $query->bindParam(':p_taskId', $taskId, PDO::PARAM_INT);
-            $query->execute();
+            // deleting task from DB
+            $taskDelete = DB::deleteTableRow($writeDB, 'tbltasks', ['id'=>$taskId]);
 
-            $rowCount = $query->rowCount();
             // if deletion failed
-            if($rowCount === 0){
+            if($taskDelete === 0){
                 // build and return error response
                 returnErrorResponse(404, ["Task not found"]);
             } // if no task fund
@@ -115,7 +80,112 @@ if(array_key_exists("taskid", $_GET)){
 
     }
     // handling update requests
-    else if($_SERVER['REQUEST_METHOD'] === 'PATCH'){}
+    else if($_SERVER['REQUEST_METHOD'] === 'PATCH'){
+        try {
+            // if not valid json header
+            if(isset($_SERVER['CONTENT_TYPE']) && $_SERVER['CONTENT_TYPE'] !== "application/json"){
+                returnErrorResponse(400, ["Content type header not set to JSON"]);
+            }
+            // passed data
+            $rawPATCHData = file_get_contents('php://input');
+            // trying to decode sent data
+            if(!$jsonData = json_decode($rawPATCHData)){
+                returnErrorResponse(400, ["Request body is not valid JSON"]);
+            }
+
+            // init var
+            $queryFields         = "";
+            // setting flags to determine fields to update
+            $title_updated       = isset($jsonData->title);
+            $description_updated = isset($jsonData->description);
+            $deadline_updated    = isset($jsonData->deadline);
+            $completed_updated   = isset($jsonData->completed);
+            
+            // building update query
+            $queryFields .= $title_updated       ? " title = :p_title, " : null;
+            $queryFields .= $description_updated ? " description = :p_description, " : null;
+            $queryFields .= $deadline_updated    ? " deadline = STR_TO_DATE(:p_deadline, '%d/%m/%Y %H:%i'), " : null;
+            $queryFields .= $completed_updated   ? " completed = :p_completed, " : null;
+            // trimming trailing comma
+            $queryFields         = rtrim($queryFields, ', ');
+
+            // if no field is provided for update
+            if( $title_updated          === false &&
+                $description_updated    === false &&
+                $deadline_updated       === false &&
+                $completed_updated      === false
+            ){
+                // build and return error response
+                returnErrorResponse(400, ["No task fields provided"]);
+            }
+
+            // requesting existing DB task
+            $originalTask = DB::requestDBTask($readDB, ['id'=>$taskId]);
+
+            // if no task found
+            if($originalTask['rows_returned'] === 0){
+                returnErrorResponse(404, ["No task found to update"]);
+            }
+
+            // the found task
+            $task = Task::createFromArray($originalTask['tasks'][0]);
+
+            // building update query
+            $queryString = 'UPDATE tbltasks SET '.$queryFields.' WHERE id = :p_id';
+            $query = $writeDB->prepare($queryString);
+
+            // if updating title
+            if($title_updated === true){
+                $task->setTitle($jsonData->title);
+                $up_title = $task->getTitle();
+                $query->bindParam(':p_title', $up_title);
+            } // end if title
+            // if updating description
+            if($description_updated === true){
+                $task->setDescription($jsonData->description);
+                $up_description = $task->getDescription();
+                $query->bindParam(':p_description', $up_description);
+            } // end if description
+            // if updating deadline
+            if($deadline_updated === true){
+                $task->setDeadline($jsonData->deadline);
+                $up_deadline = $task->getDeadline();
+                $query->bindParam(':p_deadline', $up_deadline);
+            } // end deadline
+            // if update completed
+            if($completed_updated === true){
+                $task->setCompleted($jsonData->completed);
+                $up_completed = $task->getComplited();
+                $query->bindParam(':p_completed', $up_completed);
+            } // end if completed
+
+            $query->bindParam(':p_id', $taskId, PDO::PARAM_INT);
+            $query->execute();
+            $rowCount = $query->rowCount();
+            // if no task updated
+            if($rowCount === 0){
+                returnErrorResponse(400, ["Task not updated"]);
+            }
+
+            // requesting existing DB task
+            $updatedTask = DB::requestDBTask($writeDB, ['id'=>$taskId]);
+            $returnData['rows_returned'] = $rowCount;
+            $returnData['tasks'] = $updatedTask['tasks'];
+
+            // return success response
+            returnSuccessResponse(200, $returnData, "Task updated");
+        }
+        catch (TaskException $ex){
+            // build and sed error response
+            returnErrorResponse(400, [$ex->getMessage()]);
+        }
+        catch (PDOException $ex){
+            // logging error to php error logs
+            error_log("Database query error - ".$ex, 0);
+            // build and sed error response
+            returnErrorResponse(500, ["Failed to update task - check your data for errors - ".$ex->getMessage()]);
+        } // end try catch
+    }
     // on unsupported request
     else {
         // build and return error response
@@ -137,37 +207,10 @@ else if (array_key_exists('completed', $_GET)){
     // on completed GET request
     if($_SERVER['REQUEST_METHOD'] === 'GET') {
         try {
-            $query = $readDB->prepare('
-                SELECT 
-                    id, 
-                    title, 
-                    description, 
-                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
-                    completed
-                FROM tbltasks
-                WHERE  completed = :p_completed
-            ');
-            $query->bindParam(':p_completed', $completed, PDO::PARAM_STR);
-            $query->execute();
-            $rowCount = $query->rowCount();
-
-            while($row = $query->fetch(PDO::FETCH_ASSOC)){
-                $task = new Task(
-                    $row['id'],
-                    $row['title'],
-                    $row['description'],
-                    $row['deadline'],
-                    $row['completed']
-                );
-                $taskArray[] = $task->returnTaskAsArray();
-            } // end while
-
-            $returnData['rows_returned'] = $rowCount;
-            $returnData['tasks'] = $taskArray;
-
+            // getting task data from db
+            $dbData = DB::requestDBTask($readDB, ['completed'=>$completed]);
             // building and returning success response
-            returnSuccessResponse(200, $returnData);
-
+            returnSuccessResponse(200, $dbData);
         }
         catch (TaskException $e){
             // build and return error response
@@ -218,43 +261,17 @@ else if (array_key_exists('page', $_GET)) {
             // calculating tasks to return
             $offset = $page == 1 ? 0 : $limitPerPage*($page-1);
 
-            $query = $readDB->prepare('
-                SELECT 
-                    id, 
-                    title, 
-                    description, 
-                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
-                    completed
-                FROM tbltasks
-                LIMIT :p_pagelimit offset :p_offset
-            ');
-            $query->bindParam(':p_pagelimit', $limitPerPage, PDO::PARAM_INT);
-            $query->bindParam(':p_offset', $offset, PDO::PARAM_INT);
-            $query->execute();
-
-            $rowCount = $query->rowCount();
-            $taskArray = [];
-
-            while($row = $query->fetch(PDO::FETCH_ASSOC)){
-                $task = new Task(
-                    $row['id'],
-                    $row['title'],
-                    $row['description'],
-                    $row['deadline'],
-                    $row['completed']
-                );
-                $taskArray[] = $task->returnTaskAsArray();
-            }
+            $dbData = DB::requestDBTask($readDB,[1=>1], " LIMIT $limitPerPage OFFSET $offset");
 
             $returnData = [];
-            $returnData['rows_returned'] = $rowCount;
+            $returnData['rows_returned'] = $dbData['rows_returned'];
             $returnData['total_rows'] = $tasksCount;
             $returnData['total_pages'] = $numOfPages;
             // returning pagination info
             $page < $numOfPages ? $returnData['has_next_page'] = true : $returnData['has_next_page'] =  false;
             $page > 1 ? $returnData['has_previous_page'] = true : $returnData['has_previous_page'] =  false;
 
-            $returnData['tasks'] = $taskArray;
+            $returnData['tasks'] = $dbData['tasks'];
 
             // build and return success response
             returnSuccessResponse(200, $returnData);
@@ -279,37 +296,12 @@ else if (empty($_GET)){
     // if requesting list of tasks
     if($_SERVER['REQUEST_METHOD'] === 'GET'){
         try {
-            $query = $readDB->prepare('
-                SELECT 
-                    id, 
-                    title, 
-                    description, 
-                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
-                    completed
-                FROM tbltasks
-                WHERE  1
-            ');
-            $query->execute();
-            $rowCount  = $query->rowCount();
-            $taskArray = []; // reset array
 
-            while($row = $query->fetch(PDO::FETCH_ASSOC)){
-                $task = new Task(
-                    $row['id'],
-                    $row['title'],
-                    $row['description'],
-                    $row['deadline'],
-                    $row['completed']
-                );
-                $taskArray[] = $task->returnTaskAsArray();
-            }
-
-            $returnData = [];
-            $returnData['rows_returned'] = $rowCount;
-            $returnData['tasks'] = $taskArray;
+            // getting task data from db
+            $dbData = DB::requestDBTask( $readDB, [1=>1]);
 
             // build and return success response
-            returnSuccessResponse(200, $returnData);
+            returnSuccessResponse(200, $dbData);
 
         } catch (PDOException $ex){
             // build and return error response
@@ -376,59 +368,31 @@ else if (empty($_GET)){
                 VALUES
                     ( :p_title, :p_description, STR_TO_DATE(:p_deadline, \'%d/%m/%Y %H:%i\'), :p_completed)
             ');
-            $query->bindParam(':p_title', $title, PDO::PARAM_STR);
-            $query->bindParam(':p_description', $description, PDO::PARAM_STR);
-            $query->bindParam(':p_deadline', $deadline, PDO::PARAM_STR);
-            $query->bindParam(':p_completed', $completed, PDO::PARAM_STR);
+            $query->bindParam(':p_title', $title);
+            $query->bindParam(':p_description', $description);
+            $query->bindParam(':p_deadline', $deadline);
+            $query->bindParam(':p_completed', $completed);
             $query->execute();
             $rowCount = $query->rowCount();
 
             // if no row effected return error
             if($rowCount === 0){
-                returnErrorResponse(500,"Failed to create task");
+                returnErrorResponse(500,["Failed to create task"]);
             }
 
             // getting last inserted task's ID
             $lastTaskID = $writeDB->lastInsertId();
-
-            $query = $writeDB->prepare('
-                SELECT 
-                    id, 
-                    title, 
-                    description, 
-                    DATE_FORMAT(deadline, "%d/%m/%Y %H:%i") as deadline, 
-                    completed
-                FROM tbltasks
-                WHERE id = :p_taskID 
-            ');
-            $query->bindParam(':p_taskID', $lastTaskID);
-            $query->execute();
-            $rowCount = $query->rowCount();
+            // getting newly inserted task data
+            $dbData = DB::requestDBTask($writeDB, ['id'=>$lastTaskID]);
 
             // if task not found
-            if($rowCount === 0){
+            if($dbData['rows_returned'] === 0){
                 // build and return error response
                 returnErrorResponse(500, ["Failed to return task after creation - id:".$lastTaskID]);
             } // row count
 
-            // if task found
-            while($row = $query->fetch(PDO::FETCH_ASSOC)){
-                $task = new Task(
-                    $row['id'],
-                    $row['title'],
-                    $row['description'],
-                    $row['deadline'],
-                    $row['completed']
-                );
-                $taskArray[] = $task->returnTaskAsArray();
-            } // while
-
-            // building task array for returning
-            $returnData['rows_returned'] = $rowCount;
-            $returnData['tasks'] = $taskArray;
-
             // building and returning response
-            returnSuccessResponse(201, $returnData, "Task created", false);
+            returnSuccessResponse(201, $dbData, "Task created", false);
         }
         catch (TaskException $ex){
             // build and return error response
@@ -454,7 +418,6 @@ else {
 
 
 
-
 function returnSuccessResponse(
     int $p_code,
     array $p_return_data = null,
@@ -465,8 +428,9 @@ function returnSuccessResponse(
     $response = new Response();
     $response->setHttpStatusCode($p_code);
     $response->setSuccess(true);
-    $response->toCache(true);
 
+    // cache response if needed
+    $p_cache ? $response->toCache(true) : null;
     // returning data if provided
     is_array($p_return_data) && !empty($p_return_data)
         ?  $response->setData($p_return_data)

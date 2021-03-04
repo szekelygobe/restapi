@@ -23,7 +23,21 @@ class Task {
         $this->setCompleted($complited);
     }
 
-    public function getID(){
+
+    public static function createFromArray(array $p_task):Task
+    {
+        // building new task from param array
+        return new self(
+            $p_task['id'],
+            $p_task['title'],
+            $p_task['description'],
+            $p_task['deadline'],
+            $p_task['completed']
+        );
+    } // end from array
+
+
+public function getID(){
         return $this->_id;
     }
 
