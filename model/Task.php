@@ -4,6 +4,7 @@ class TaskException extends Exception {}
 
 class Task {
     private $_id;
+    private $_userid;
     private $_title;
     private $_description;
     private $_deadline;
@@ -11,12 +12,14 @@ class Task {
 
     public function __construct(
         $id,
+        $userid,
         $title,
         string $description = null,
         string $deadline = null,
         string $complited)
     {
         $this->setID($id);
+        $this->setUserID($userid);
         $this->setTitle($title);
         $this->setDescription($description);
         $this->setDeadline($deadline);
@@ -29,6 +32,7 @@ class Task {
         // building new task from param array
         return new self(
             $p_task['id'],
+            $p_task['userid'],
             $p_task['title'],
             $p_task['description'],
             $p_task['deadline'],
@@ -38,6 +42,10 @@ class Task {
 
     public function getID(){
         return $this->_id;
+    }
+
+    public function getUserID(){
+        return $this->_userid;
     }
 
     public function getTitle(){
@@ -68,6 +76,18 @@ class Task {
             throw new TaskException('Task ID error');
         }
         $this->_id = $id;
+    }
+
+    /**
+     * @param $userid - the userid, owner of the task
+     * @throws TaskException
+     */
+    public function setUserID ($userid): void
+    {
+        if( $userid <= 0 || $userid > 922337203685477580 ){
+            throw new TaskException('User ID error');
+        }
+        $this->_userid = $userid;
     }
 
     /**
@@ -131,6 +151,7 @@ class Task {
     {
         $task                = [];
         $task['id']          = $this->getID();
+        $task['userid']      = $this->getUserID();
         $task['title']       = $this->getTitle();
         $task['description'] = $this->getDescription();
         $task['deadline']    = $this->getDeadline();

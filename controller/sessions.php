@@ -111,7 +111,12 @@ if(array_key_exists("sessionid", $_GET)){
             // saving to variable
             $refreshtoken = $jsonData->refresh_token;
             // searching for session in DB
-            $session = DB::requestSession($writeDB, $sessionid, $accesstoken, $refreshtoken);
+            $session = DB::requestSession(
+                $writeDB,
+                [ 's.id'            => $sessionid,
+                  's.accesstoken'   => $accesstoken,
+                  's.refreshtoken'  => $refreshtoken ]
+            );
 
             // if session not found
             if($session['rowCount'] === 0){
@@ -181,8 +186,8 @@ if(array_key_exists("sessionid", $_GET)){
             Response::returnSuccessResponse(200, $updatedSession, $language_array['LNG_TOKEN_REFRESH_SUCCESS']);
 
         } catch (PDOException $ex){
-            // bulding error message
-            Response::returnErrorResponse(500, [$language_array['LNG_TOKEN_REFRESH_ERROR']]);
+            // building error message
+            Response::returnErrorResponse(500, [$language_array['LNG_TOKEN_REFRESH_ERROR'].' - '.$ex]);
         } // try catch
     } // invalid method
     else {

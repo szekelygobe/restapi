@@ -14,12 +14,71 @@ try {
     $writeDB = DB::connectWriteDB();
     $readDB = DB::connectReadDB();
 
-} catch (PDOException $e){
+}
+catch (PDOException $e){
     // logging error message to standard php error log file
     error_log($language_array['LNG_DB_CONNECTION_ERROR'].' - '.$e, 0);
     // build and return error response
     Response::returnErrorResponse(500, [$language_array['LNG_DB_CONNECTION_ERROR']]);
 }
+
+// ****************** begin auth script
+
+// if no or invalid authorization
+if(!isset($_SERVER['HTTP_AUTHORIZATION']) || strlen($_SERVER['HTTP_AUTHORIZATION']) < 1){
+    // building array of messages
+    $message = [];
+    !isset($_SERVER['HTTP_AUTHORIZATION'])
+        ? $message[] = $language_array['LNG_ACCESS_TOKEN_MISSING']
+        : null;
+    isset($_SERVER['HTTP_AUTHORIZATION']) && strlen($_SERVER['HTTP_AUTHORIZATION']) < 1
+        ? $message[] = $language_array['LNG_ACCESS_TOKEN_TO_SHORT']
+        : null;
+    // building failed response
+    Response::returnErrorResponse(401, $message);
+} // end if no or invalid authorization
+
+// the accesstoken sent in the header
+$accesstoken = $_SERVER['HTTP_AUTHORIZATION'];
+
+// searching for valid token
+try {
+    // searching for valid session in DB
+    $session = DB::requestSession($writeDB, ['accesstoken' => $accesstoken]);
+    // if no session found
+    if ($session['rowCount'] === 0) {
+        Response::returnErrorResponse(401, [$language_array['LNG_INVALID_ACCESS_TOKEN']]);
+    } // if no session found
+
+    // extracting returned values from DB
+    $returned_userid             = $session['data'][0]['userid'];
+    $returned_accesstoken_expiry = $session['data'][0]['accesstokenexpiry'];
+    $returned_loginattempts      = $session['data'][0]['loginattempts'];
+    $returned_useractive         = $session['data'][0]['useractive'];
+
+    // if not active user account
+    if ($returned_useractive !== 'Y') {
+        // build and return error response
+        Response::returnErrorResponse(401, [$language_array['LNG_USER_ACCOUNT_INACTIVE']]);
+    } // if not active
+
+    // if login attempt exceeded
+    if ($returned_loginattempts >= CONST_LOGIN_ATTEMPT_LIMIT) {
+        // build and return error response
+        Response::returnErrorResponse(401, [$language_array['LNG_USER_ACCOUNT_LOCKED_OUT']]);
+    } // if login attempt exceeded
+
+    // if access token not expired
+    if (strtotime($returned_accesstoken_expiry) < time()) {
+        // build and return error response
+        Response::returnErrorResponse(401, [$language_array['LNG_ACCESS_TOKEN_EXPIRED']]);
+    } // if access token expired
+}
+catch (PDOException $ex){
+    Response::returnErrorResponse(500, $language_array['LNG_LOGIN_DB_ERROR']);
+} // try catch
+
+// ****************** end auth script
 
 // if task id provided
 if(array_key_exists("taskid", $_GET)){
@@ -41,7 +100,7 @@ if(array_key_exists("taskid", $_GET)){
     {
         try {
             // getting task data from db
-            $dbData = DB::requestDBTask( $readDB, ['id'=>$taskId]);
+            $dbData = DB::requestDBTask( $readDB, ['id'=>$taskId, 'userid'=>$returned_userid]);
             // if no task found
             if($dbData['rows_returned'] === 0){
                 // build and return error response
@@ -65,7 +124,7 @@ if(array_key_exists("taskid", $_GET)){
     else if($_SERVER['REQUEST_METHOD'] === 'DELETE'){
         try {
             // deleting task from DB
-            $taskDelete = DB::deleteTableRow($writeDB, TBL_TASKS, ['id'=>$taskId]);
+            $taskDelete = DB::deleteTableRow($writeDB, TBL_TASKS, ['id'=>$taskId, 'userid'=>$returned_userid]);
 
             // if deletion failed
             if($taskDelete === 0){
@@ -134,7 +193,7 @@ if(array_key_exists("taskid", $_GET)){
             $task = Task::createFromArray($originalTask['tasks'][0]);
 
             // building update query
-            $queryString = 'UPDATE '.TBL_TASKS.' SET '.$queryFields.' WHERE id = :p_id';
+            $queryString = 'UPDATE '.TBL_TASKS.' SET '.$queryFields.' WHERE id = :p_id AND userid = :p_userid';
             $query = $writeDB->prepare($queryString);
 
             // if updating title
@@ -162,7 +221,8 @@ if(array_key_exists("taskid", $_GET)){
                 $query->bindParam(':p_completed', $up_completed);
             } // end if completed
 
-            $query->bindParam(':p_id', $taskId, PDO::PARAM_INT);
+            $query->bindParam(':p_id', $taskId);
+            $query->bindParam(':p_userid', $returned_userid);
             $query->execute();
             $rowCount = $query->rowCount();
             // if no task updated
@@ -171,7 +231,7 @@ if(array_key_exists("taskid", $_GET)){
             }
 
             // requesting existing DB task
-            $updatedTask = DB::requestDBTask($writeDB, ['id'=>$taskId]);
+            $updatedTask = DB::requestDBTask($writeDB, ['id'=>$taskId, 'userid'=>$returned_userid]);
             $returnData['rows_returned'] = $rowCount;
             $returnData['tasks'] = $updatedTask['tasks'];
 
@@ -212,7 +272,7 @@ else if (array_key_exists('completed', $_GET)){
     if($_SERVER['REQUEST_METHOD'] === 'GET') {
         try {
             // getting task data from db
-            $dbData = DB::requestDBTask($readDB, ['completed'=>$completed]);
+            $dbData = DB::requestDBTask($readDB, ['completed'=>$completed, 'userid'=>$returned_userid]);
             // building and returning success response
             Response::returnSuccessResponse(200, $dbData);
         }
@@ -247,7 +307,7 @@ else if (array_key_exists('page', $_GET)) {
 
         try {
             // counting tasks in DB
-            $nrTasks    = DB::requestDBData($readDB, TBL_TASKS, "count(id) as totalNoOfTasks", [1=>1]);
+            $nrTasks    = DB::requestDBData($readDB, TBL_TASKS, "count(id) as totalNoOfTasks", ['userid'=>$returned_userid]);
             $tasksCount = intval($nrTasks['data'][0]['totalNoOfTasks']);
             // calculating number of pages we need (rounded up), minimum of 1 page
             $numOfPages = $tasksCount > 0
@@ -263,7 +323,7 @@ else if (array_key_exists('page', $_GET)) {
             // calculating tasks to return
             $offset = $page == 1 ? 0 : $limitPerPage*($page-1);
 
-            $dbData = DB::requestDBTask($readDB,[1=>1], " LIMIT $limitPerPage OFFSET $offset");
+            $dbData = DB::requestDBTask($readDB, ['userid'=>$returned_userid], " LIMIT $limitPerPage OFFSET $offset");
 
             $returnData = [];
             $returnData['rows_returned'] = $dbData['rows_returned'];
@@ -299,7 +359,7 @@ else if (empty($_GET)){
         try {
 
             // getting task data from db
-            $dbData = DB::requestDBTask( $readDB, [1=>1]);
+            $dbData = DB::requestDBTask( $readDB, ['userid'=>$returned_userid]);
 
             // build and return success response
             Response::returnSuccessResponse(200, $dbData);
@@ -351,6 +411,7 @@ else if (empty($_GET)){
             // building new task object and validating data
             $newTask = new Task(
                 null,
+                $returned_userid,
                 $jsonData->title,
                 isset($jsonData->description) ? $jsonData->description : null,
                 isset($jsonData->deadline) ? $jsonData->deadline : null,
@@ -359,10 +420,11 @@ else if (empty($_GET)){
 
             // building values to insert
             $insertValues = [
-              'title'       => $newTask->getTitle(),
-              'description' => $newTask->getDescription(),
-              'deadline'    => $newTask->getDeadline(),
-              'completed'   => $newTask->getComplited()
+                'userid'      => $newTask->getUserID(),
+                'title'       => $newTask->getTitle(),
+                'description' => $newTask->getDescription(),
+                'deadline'    => $newTask->getDeadline(),
+                'completed'   => $newTask->getComplited()
             ];
             // inserting task into DB
             $taskInsert = DB::insertDB($writeDB, TBL_TASKS, $insertValues);
@@ -372,7 +434,7 @@ else if (empty($_GET)){
             }
 
             // getting newly inserted task data
-            $dbData = DB::requestDBTask($writeDB, ['id'=>$taskInsert]);
+            $dbData = DB::requestDBTask($writeDB, ['id'=>$taskInsert, 'userid'=>$returned_userid]);
 
             // if task not found
             if($dbData['rows_returned'] === 0){
