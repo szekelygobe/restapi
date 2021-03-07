@@ -342,4 +342,60 @@ class DB {
 
 
 
+
+
+    /**
+     * Search for session
+     * @access public
+     * @param object $p_db              - the database connection
+     * @param int $p_sessionid          - the id of the session we are looking for
+     * @param string $p_access_token    - the access token of the searched session
+     * @param string $p_refresh_token   - the refresh token of the searched session
+     * @param bool $p_print             - flag to print built query
+     * @return array - array of session data
+     */
+    public static function requestSession(
+        object $p_db,
+        int $p_sessionid,
+        string $p_access_token,
+        string $p_refresh_token,
+        bool $p_print = null): array
+    {
+        // PDO parameter array
+        $params = [
+            ':p_userid'       => $p_sessionid,
+            ':p_accesstoken'  => $p_access_token,
+            ':p_refreshtoken' => $p_refresh_token];
+
+        // building query
+        $query = "
+            SELECT s.id AS sessionid,
+                   s.userid AS userid,
+                   s.accesstoken,
+                   s.accesstokenexpiry,
+                   s.refreshtoken,
+                   s.refreshtokenexpiry,
+                   u.useractive,
+                   u.loginattempts
+            FROM ".TBL_SESSIONS." AS s,
+                 ".TBL_USERS." AS u
+            WHERE  u.id = s.userid AND
+                   s.id = :p_userid AND
+                   s.accesstoken = :p_accesstoken AND
+                   s.refreshtoken = :p_refreshtoken ";
+
+        // display built query if needed
+        $p_print ? psql($query, $params,'db.php - 388',0,1) : null ;
+
+        // running the query
+        try {
+            return self::dbQuery($p_db, $query,$params);
+        } catch (PDOException $ex){
+            throw $ex;
+        }
+
+    } // end user session
+
+
+
 } // class

@@ -17,8 +17,178 @@ catch (PDOException $ex){
     Response::returnErrorResponse(500, [$language_array['LNG_DB_CONNECTION_ERROR']]);
 }
 
+// if sessionid provided in url
 if(array_key_exists("sessionid", $_GET)){
+    $sessionid = $_GET['sessionid'];
 
+    // checking valid sessionid
+    if($sessionid === '' || !is_numeric($sessionid)){
+        // building array of messages
+        $message = [];
+        $sessionid === ''       ? $message[] = $language_array['LNG_BLANK_SESSIONID_ERROR'] : null;
+        !is_numeric($sessionid) ? $message[] = $language_array['LNG_NOT_NUMERIC_SESSIONID_ERROR'] : null;
+        // building failed response
+        Response::returnErrorResponse(400, $message);
+    } // if invalid session ID
+
+    // if no or invalid authorization
+    if(!isset($_SERVER['HTTP_AUTHORIZATION']) || strlen($_SERVER['HTTP_AUTHORIZATION']) < 1){
+        // building array of messages
+        $message = [];
+        !isset($_SERVER['HTTP_AUTHORIZATION'])
+            ? $message[] = $language_array['LNG_ACCESS_TOKEN_MISSING']
+            : null;
+        isset($_SERVER['HTTP_AUTHORIZATION']) && strlen($_SERVER['HTTP_AUTHORIZATION']) < 1
+            ? $message[] = $language_array['LNG_ACCESS_TOKEN_TO_SHORT']
+            : null;
+        // building failed response
+        Response::returnErrorResponse(401, $message);
+    } // end if no or invalid authorization
+
+    // the accesstoken sent in the header
+    $accesstoken = $_SERVER['HTTP_AUTHORIZATION'];
+
+    // if log out
+    if($_SERVER['REQUEST_METHOD'] === 'DELETE' ){
+        try {
+            // trying to delete existing session
+            $deletedSession = DB::deleteTableRow(
+                $writeDB,
+                TBL_SESSIONS,
+                ['id'=>$sessionid, 'accesstoken'=>$accesstoken ]
+            );
+
+            // if no session deleted
+            if((int)$deletedSession === 0){
+                // build and send error response
+                Response::returnErrorResponse(400, [$language_array['LNG_TOKEN_DELETE_ERROR']]);
+            } // end if else
+
+            // building response data
+            $returnData = [];
+            $returnData['session_id'] = (int)$sessionid;
+            // building and sending success response
+            Response::returnSuccessResponse(200, $returnData, $language_array['LNG_LOGGED_OUT_SUCCESS']);
+
+        }
+        catch (PDOException $ex){
+            // building error response
+            Response::returnErrorResponse(500, [$language_array['LNG_LOGOUT_ISSUE']]);
+        } // try catch
+    } // if update token
+    // if refreshing access token
+    elseif($_SERVER['REQUEST_METHOD'] === 'PATCH' ){
+        //checking if correct header
+        if(isset($_SERVER['CONTENT_TYPE']) && $_SERVER['CONTENT_TYPE'] !== 'application/json'){
+            // building and sending error response
+            Response::returnErrorResponse(400, [$language_array['LNG_HEADER_NOT_JSON']]);
+        } // end if correct header
+
+        // the sent data
+        $rawPostedData = file_get_contents("php://input");
+
+        // check if valid JSON format
+        if(!$jsonData = json_decode($rawPostedData)){
+            // building and sending error response
+            Response::returnErrorResponse(400, [$language_array['LNG_BODY_NOT_VALID_JSON']]);
+        } // end if invalid JSON
+
+        // verifying valid refreshtoken format
+        if(!isset($jsonData->refresh_token) || strlen($jsonData->refresh_token) < 1){
+            // building multiple messages
+            $message = [];
+            !isset($jsonData->refresh_token)
+                ? $message[] = $language_array['LNG_REFRESH_TOKEN_MISSING']
+                : null;
+            isset($jsonData->refresh_token) && strlen($jsonData->refresh_token) < 1
+                ? $message[] = $language_array['LNG_REFRESH_TOKEN_BLANK']
+                : null;
+            // building and sending error response
+            Response::returnErrorResponse(400, $message);
+        } // end if valid refreshtoken format
+
+        try {
+            // saving to variable
+            $refreshtoken = $jsonData->refresh_token;
+            // searching for session in DB
+            $session = DB::requestSession($writeDB, $sessionid, $accesstoken, $refreshtoken);
+
+            // if session not found
+            if($session['rowCount'] === 0){
+                Response::returnErrorResponse(401, [$language_array['LNG_INCORRECT_TOKEN_TO_SID']]);
+            } // if session not found
+
+            // extracting returned values from DB
+            $returned_sessionid           = $session['data'][0]['sessionid'];
+            $returned_userid              = $session['data'][0]['userid'];
+            $returned_accesstoken         = $session['data'][0]['accesstoken'];
+            $returned_accesstoken_expiry  = $session['data'][0]['accesstokenexpiry'];
+            $returned_refreshtoken        = $session['data'][0]['refreshtoken'];
+            $returned_refreshtoken_expiry = $session['data'][0]['refreshtokenexpiry'];
+            $returned_useractive          = $session['data'][0]['useractive'];
+            $returned_loginattempts       = $session['data'][0]['loginattempts'];
+
+            // if not active user account
+            if($returned_useractive !== 'Y'){
+                // build and return error response
+                Response::returnErrorResponse(401, [$language_array['LNG_USER_ACCOUNT_INACTIVE']]);
+            } // if not active
+
+            // if login attempt exceeded
+            if($returned_loginattempts >= CONST_LOGIN_ATTEMPT_LIMIT){
+                // build and return error response
+                Response::returnErrorResponse(401, [$language_array['LNG_USER_ACCOUNT_LOCKED_OUT']]);
+            } // if login attempt exceeded
+
+            // if refresh token not expired
+            if( strtotime($returned_refreshtoken_expiry) < time()){
+                // build and return error response
+                Response::returnErrorResponse(401, [$language_array['LNG_REFRESH_TOKEN_EXPIRED']]);
+            } // if refresh token expired
+
+            // generating new tokens with expiration dates
+            $new_tokens = generateTokens();
+
+            // updating session tokens
+            $updateSession = DB::updateDB(
+                $writeDB,
+                TBL_SESSIONS,
+                [ 'accesstoken'         => $new_tokens['accesstoken'],
+                  'accesstokenexpiry'   => $new_tokens['accesstokenexpiry'],
+                  'refreshtoken'        => $new_tokens['refreshtoken'],
+                  'refreshtokenexpiry'  => $new_tokens['refreshtokenexpiry'] ],
+                [ 'id'           => $returned_sessionid,
+                  'userid'       => $returned_userid,
+                  'accesstoken'  => $returned_accesstoken,
+                  'refreshtoken' => $returned_refreshtoken ]
+            ); // update
+
+            // if no session updated
+            if($updateSession['rowCount'] === 0){
+                // build and return response
+                Response::returnErrorResponse(401, [$language_array['LNG_TOKEN_REFRESH_UPDATE_ERROR']]);
+            } // if no update
+
+            // building return data
+            $updatedSession                             = [];
+            $updatedSession['session_id']               = $returned_sessionid;
+            $updatedSession['access_token']             = $new_tokens['accesstoken'];
+            $updatedSession['access_token_expires_in']  = CONST_ACCESS_TOKEN_EXPIRY;
+            $updatedSession['refresh_token']            = $new_tokens['refreshtoken'];
+            $updatedSession['refresh_token_expires_in'] = CONST_REFRESH_TOKEN_EXPIRY;
+
+            // returning success result
+            Response::returnSuccessResponse(200, $updatedSession, $language_array['LNG_TOKEN_REFRESH_SUCCESS']);
+
+        } catch (PDOException $ex){
+            // bulding error message
+            Response::returnErrorResponse(500, [$language_array['LNG_TOKEN_REFRESH_ERROR']]);
+        } // try catch
+    } // invalid method
+    else {
+        // building error response
+        Response::returnErrorResponse(405, [$language_array['LNG_REQUEST_METHOD_ERROR']]);
+    } // end if else valid method
 }
 // creating new session
 elseif (empty($_GET)){
@@ -119,8 +289,7 @@ elseif (empty($_GET)){
         } //if wrong password
 
         // generating unique tokens
-        $accessToken    = base64_encode(bin2hex(openssl_random_pseudo_bytes(24)).time());
-        $refreshToken   = base64_encode(bin2hex(openssl_random_pseudo_bytes(24)).time());
+        $new_tokens = generateTokens();
 
         // trying login update transaction
         try {
@@ -139,10 +308,10 @@ elseif (empty($_GET)){
                 $writeDB,
                 TBL_SESSIONS,
                 [ 'userid'              => $returned_id,
-                  'accesstoken'         => $accessToken,
-                  'accesstokenexpiry'   => date(CONST_PHP_DATE_FORMAT, strtotime("+".CONST_ACCESS_TOKEN_EXPIRY." sec")),
-                  'refreshtoken'        => $refreshToken,
-                  'refreshtokenexpiry'  => date(CONST_PHP_DATE_FORMAT, strtotime('+'.CONST_REFRESH_TOKEN_EXPIRY.' sec'))
+                  'accesstoken'         => $new_tokens['accesstoken'],
+                  'accesstokenexpiry'   => $new_tokens['accesstokenexpiry'],
+                  'refreshtoken'        => $new_tokens['refreshtoken'],
+                  'refreshtokenexpiry'  => $new_tokens['refreshtokenexpiry']
                 ]
             ); // end insert
             // commit and close transaction
@@ -151,19 +320,13 @@ elseif (empty($_GET)){
             // building return data
             $returnData                             = [];
             $returnData['session_id']               = $insertedUser;
-            $returnData['access_token']             = $accessToken;
-            $returnData['access_token_expires_is']  = CONST_ACCESS_TOKEN_EXPIRY;
-            $returnData['refresh_token']            = $refreshToken;
-            $returnData['refresh_token_expires_id'] = CONST_REFRESH_TOKEN_EXPIRY;
+            $returnData['access_token']             = $new_tokens['accesstoken'];
+            $returnData['access_token_expires_in']  = CONST_ACCESS_TOKEN_EXPIRY;
+            $returnData['refresh_token']            = $new_tokens['refreshtoken'];
+            $returnData['refresh_token_expires_in'] = CONST_REFRESH_TOKEN_EXPIRY;
 
             // returning success result
             Response::returnSuccessResponse(201, $returnData);
-
-
-            // vid 27
-
-
-
         }
         catch (PDOException $ex){
             // roll back updates if transaction failed
@@ -179,3 +342,25 @@ elseif (empty($_GET)){
 else {
     Response::returnErrorResponse(404, [$language_array['LNG_ENDPOINT_ERROR']]);
 } // end if else
+
+
+
+
+/**
+ * Generate new access and refresh tokens with expiration dates
+ * @access public
+ * @param -
+ * @return array - of generated data
+ */
+function generateTokens():array {
+    // init var
+    $result = [];
+    // generating unique tokens
+    $result['accesstoken']        = base64_encode(bin2hex(openssl_random_pseudo_bytes(24)) . time());
+    $result['accesstokenexpiry']  = date(CONST_PHP_DATE_FORMAT, strtotime("+" . CONST_ACCESS_TOKEN_EXPIRY . " sec"));
+    $result['refreshtoken']       = base64_encode(bin2hex(openssl_random_pseudo_bytes(24)) . time());
+    $result['refreshtokenexpiry'] = date(CONST_PHP_DATE_FORMAT, strtotime('+'.CONST_REFRESH_TOKEN_EXPIRY.' sec'));
+
+    return $result;
+} // end new tokens
+

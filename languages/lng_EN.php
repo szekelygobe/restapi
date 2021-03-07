@@ -42,6 +42,20 @@ $language_array['LNG_LOGIN_DB_ERROR']               = 'There was an issue loggin
 $language_array['LNG_USER_ACCOUNT_INACTIVE']        = 'User account not active';
 $language_array['LNG_USER_ACCOUNT_LOCKED_OUT']      = 'User account is currently locked out';
 $language_array['LNG_LOGIN_ISSUE']                  = 'There was an issue logging in';
+$language_array['LNG_LOGOUT_ISSUE']                 = 'There was an issue logging in';
+$language_array['LNG_BLANK_SESSIONID_ERROR']        = 'Session ID cannot be blank';
+$language_array['LNG_NOT_NUMERIC_SESSIONID_ERROR']  = 'Session ID must be numeric';
+$language_array['LNG_ACCESS_TOKEN_MISSING']         = 'Access token is missing from the header';
+$language_array['LNG_ACCESS_TOKEN_TO_SHORT']        = 'Access token cannot be blank';
+$language_array['LNG_TOKEN_DELETE_ERROR']           = 'Failed to log out of this session using access token provided';
+$language_array['LNG_LOGGED_OUT_SUCCESS']           = 'Logged out';
+$language_array['LNG_REFRESH_TOKEN_MISSING']        = 'Refresh token not supplied';
+$language_array['LNG_REFRESH_TOKEN_BLANK']          = 'Refresh token cannot be blank';
+$language_array['LNG_REFRESH_TOKEN_EXPIRED']        = 'Refresh token has expired - please log in again';
+$language_array['LNG_TOKEN_REFRESH_ERROR']          = 'There was an issue refreshing access token - please login again';
+$language_array['LNG_INCORRECT_TOKEN_TO_SID']       = 'Access token or refresh token is incorrect for session id';
+$language_array['LNG_TOKEN_REFRESH_UPDATE_ERROR']   = 'Access token could not be refreshed - please log in again';
+$language_array['LNG_TOKEN_REFRESH_SUCCESS']        = 'Token refreshed';
 
 
 // task

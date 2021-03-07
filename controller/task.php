@@ -238,7 +238,7 @@ else if (array_key_exists('page', $_GET)) {
     // pagination only on GET request method
     if($_SERVER['REQUEST_METHOD'] === 'GET'){
         $page = $_GET['page'];
-        $limitPerPage = 2;
+        $limitPerPage = CONST_ELEMENTS_PER_PAGE;
         // error handling ofr page number
         if($page == '' || !is_numeric($page)){
             // build and return error response

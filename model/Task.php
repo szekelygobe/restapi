@@ -102,8 +102,8 @@ class Task {
     {
         if( ($deadline !== null) &&
             date_format(
-                date_create_from_format('d/m/Y H:i', $deadline),
-                'd/m/Y H:i'
+                date_create_from_format(CONST_PHP_DATE_FORMAT, $deadline),
+                CONST_PHP_DATE_FORMAT
             ) !== $deadline
         ){
             throw new TaskException('Task deadline date time error');
